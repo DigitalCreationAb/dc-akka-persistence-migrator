@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Akka.Persistence" Version="1.5.19" />
+      <PackageReference Include="Akka.Persistence.Query.InMemory" Version="1.5.19" />
+      <PackageReference Include="Akka.TestKit.Xunit2" Version="1.5.19" />
+      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
+      <PackageReference Include="xunit.runner.visualstudio" Version="2.5.8">
+        <PrivateAssets>all</PrivateAssets>
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\src\DC.Akka.PersistenceMigrator\DC.Akka.PersistenceMigrator.csproj" />
+    </ItemGroup>
+
+</Project>
