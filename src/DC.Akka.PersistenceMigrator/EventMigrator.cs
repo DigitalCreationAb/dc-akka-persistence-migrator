@@ -15,22 +15,19 @@ public class EventMigrator
     private readonly string _destinationId;
     private readonly IStoreEventMigrationPosition _storeMigrationPosition;
     private readonly RestartSettings? _restartSettings;
-    private readonly Func<WriteMessagesFailed, FailureStrategy> _failureStrategy;
 
     private EventMigrator(
         ActorSystem actorSystem,
         Func<Offset, Source<EventEnvelope, NotUsed>> startSource,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        RestartSettings? restartSettings,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy)
+        RestartSettings? restartSettings)
     {
         _actorSystem = actorSystem;
         _startSource = startSource;
         _destinationId = destinationId;
         _storeMigrationPosition = storeMigrationPosition;
         _restartSettings = restartSettings;
-        _failureStrategy = failureStrategy;
     }
 
     private async Task Run(CancellationToken cancellationToken)
@@ -50,22 +47,32 @@ public class EventMigrator
             .OnFailuresWithBackoff(() =>
             {
                 return _startSource(startFrom)
-                    .SelectAsync(1, async evnt =>
+                    .GroupedWithin(
+                        1000,
+                        TimeSpan.FromSeconds(1))
+                    .SelectMany(data =>
+                    {
+                        return data
+                            .Select(x => new
+                            {
+                                Event = x,
+                                Id = x.PersistenceId
+                            })
+                            .GroupBy(x => x.Id)
+                            .Select(x => (
+                                Events: x.Select(y => y.Event).ToImmutableList(),
+                                Id: x.Key));
+                    })
+                    .SelectAsync(5, async data =>
                     {
                         var response = await destination
-                            .Ask<IJournalResponse>(new PersistenceEventWriter.Commands.WriteEvent(evnt));
+                            .Ask<PersistenceEventWriter.Responses.WriteEventsResponse>(
+                                new PersistenceEventWriter.Commands.WriteEvents(data.Id, data.Events));
 
-                        return response switch
-                        {
-                            WriteMessagesSuccessful => evnt.Offset,
-                            WriteMessagesFailed failed => _failureStrategy(failed) switch
-                            {
-                                FailureStrategy.Ignore => evnt.Offset,
-                                FailureStrategy.Throw => throw failed.Cause,
-                                _ => throw new ArgumentOutOfRangeException()
-                            },
-                            _ => throw new Exception($"Unknown response: {response.GetType()}")
-                        };
+                        if (!response.IsSuccessful)
+                            throw response.Error;
+                        
+                        return data.Events.Select(x => x.Offset).Max()!;
                     })
                     .GroupedWithin(1000, TimeSpan.FromSeconds(5))
                     .SelectAsync(1, async x =>
@@ -108,7 +115,6 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -128,8 +134,7 @@ public class EventMigrator
             },
             destinationId,
             storeMigrationPosition,
-            restartSettings,
-            failureStrategy)
+            restartSettings)
             .Run(cancellationToken);
     }
 
@@ -138,7 +143,6 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -150,7 +154,6 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
-            failureStrategy,
             filter,
             restartSettings,
             cancellationToken);
@@ -161,7 +164,6 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -173,7 +175,6 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
-            failureStrategy,
             filter,
             restartSettings,
             cancellationToken);
@@ -185,7 +186,6 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -197,7 +197,6 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
-            failureStrategy,
             filter,
             restartSettings,
             cancellationToken);
@@ -209,7 +208,6 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
-        Func<WriteMessagesFailed, FailureStrategy> failureStrategy,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -221,7 +219,6 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
-            failureStrategy,
             filter,
             restartSettings,
             cancellationToken);

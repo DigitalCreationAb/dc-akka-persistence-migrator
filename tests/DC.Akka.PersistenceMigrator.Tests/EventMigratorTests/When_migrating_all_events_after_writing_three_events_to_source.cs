@@ -109,7 +109,6 @@ public class When_migrating_all_current_events_after_writing_three_events_to_sou
                     SourcePluginName,
                     DestinationPluginName,
                     new StoreEventMigrationPositionInMemory(),
-                    _ => FailureStrategy.Throw,
                     restartSettings: RestartSettings.Create(
                             TimeSpan.Zero,
                             TimeSpan.Zero,
