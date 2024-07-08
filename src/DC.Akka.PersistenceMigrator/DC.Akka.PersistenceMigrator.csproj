@@ -9,7 +9,7 @@
     <PropertyGroup>
         <Copyright>Copyright © 2024 Digital Creation Sweden AB</Copyright>
         <Authors>Mattias Jakobsson</Authors>
-        <Version>0.2.0</Version>
+        <Version>0.3.0</Version>
         <PackageProjectUrl>
             https://github.com/DigitalCreationAb/DC.Akka.PersistenceMigrator
         </PackageProjectUrl>
@@ -18,7 +18,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Akka.Persistence.Query" Version="1.5.19" />
+      <PackageReference Include="Akka.Persistence.Query" Version="1.5.26" />
     </ItemGroup>
 
 </Project>

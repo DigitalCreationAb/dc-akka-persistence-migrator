@@ -7,11 +7,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="Akka.Persistence" Version="1.5.19" />
-      <PackageReference Include="Akka.Persistence.Query.InMemory" Version="1.5.19" />
-      <PackageReference Include="Akka.TestKit.Xunit2" Version="1.5.19" />
-      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
-      <PackageReference Include="xunit.runner.visualstudio" Version="2.5.8">
+      <PackageReference Include="Akka.Persistence" Version="1.5.26" />
+      <PackageReference Include="Akka.Persistence.Query.InMemory" Version="1.5.26" />
+      <PackageReference Include="Akka.TestKit.Xunit2" Version="1.5.26" />
+      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+      <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
