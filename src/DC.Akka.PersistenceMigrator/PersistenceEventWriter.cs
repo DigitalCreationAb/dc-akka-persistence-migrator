@@ -53,7 +53,7 @@ internal class PersistenceEventWriter : ReceiveActor
 
     private class EventWriter : ReceiveActor, IWithTimers
     {
-        public static class WriterCommands
+        private static class WriterCommands
         {
             public record Stop;
         }
@@ -155,7 +155,7 @@ internal class PersistenceEventWriter : ReceiveActor
                                     })
                                     .ToImmutableList())
                             },
-                            Sender,
+                            Self,
                             1),
                         TimeSpan.FromSeconds(5));
 
