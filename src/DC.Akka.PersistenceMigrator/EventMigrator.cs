@@ -63,7 +63,7 @@ public class EventMigrator
                                 Events: x.Select(y => y.Event).ToImmutableList(),
                                 Id: x.Key));
                     })
-                    .SelectAsync(5, async data =>
+                    .SelectAsync(1, async data =>
                     {
                         var response = await destination
                             .Ask<PersistenceEventWriter.Responses.WriteEventsResponse>(
