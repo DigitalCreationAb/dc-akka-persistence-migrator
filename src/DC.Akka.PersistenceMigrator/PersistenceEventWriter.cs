@@ -11,6 +11,7 @@ internal class PersistenceEventWriter : ReceiveActor
 {
     private readonly IActorRef _journalRef;
     private readonly EventAdapters _eventAdapters;
+    private readonly IDeduplicateEvents _deduplicateEvents;
 
     public static class Commands
     {
@@ -26,11 +27,15 @@ internal class PersistenceEventWriter : ReceiveActor
         }
     }
 
-    public PersistenceEventWriter(IActorRef journalRef, EventAdapters eventAdapters)
+    public PersistenceEventWriter(
+        IActorRef journalRef,
+        EventAdapters eventAdapters,
+        IDeduplicateEvents deduplicateEvents)
     {
         _journalRef = journalRef;
         _eventAdapters = eventAdapters;
-        
+        _deduplicateEvents = deduplicateEvents;
+
         Receive<Commands.WriteEvents>(cmd =>
         {
             var writer = GetWriter(cmd.PersistenceId);
@@ -47,7 +52,8 @@ internal class PersistenceEventWriter : ReceiveActor
             ? Context.ActorOf(Props.Create(() => new EventWriter(
                 persistenceId,
                 _journalRef,
-                _eventAdapters)))
+                _eventAdapters,
+                _deduplicateEvents)))
             : writer;
     }
 
@@ -61,12 +67,18 @@ internal class PersistenceEventWriter : ReceiveActor
         private readonly string _persistenceId;
         private readonly IActorRef _journalRef;
         private readonly EventAdapters _eventAdapters;
+        private readonly IDeduplicateEvents _deduplicateEvents;
 
-        public EventWriter(string persistenceId, IActorRef journalRef, EventAdapters eventAdapters)
+        public EventWriter(
+            string persistenceId,
+            IActorRef journalRef,
+            EventAdapters eventAdapters,
+            IDeduplicateEvents deduplicateEvents)
         {
             _persistenceId = persistenceId;
             _journalRef = journalRef;
             _eventAdapters = eventAdapters;
+            _deduplicateEvents = deduplicateEvents;
 
             Become(NotLoaded);
             
@@ -96,20 +108,20 @@ internal class PersistenceEventWriter : ReceiveActor
 
         private void Replaying(Commands.WriteEvents writing, IActorRef replyTo)
         {
-            var replayedEventNumbers = new List<long>();
+            var replayedEventNumbers = new List<string>();
 
             Receive<ReplayedMessage>(cmd =>
             {
-                replayedEventNumbers.Add(cmd.Persistent.SequenceNr);
+                replayedEventNumbers.Add(_deduplicateEvents.GetDeduplicationKey(cmd.Persistent));
                 
                 ScheduleStop();
             });
 
-            Receive<RecoverySuccess>(_ =>
+            Receive<RecoverySuccess>(cmd =>
             {
                 Self.Tell(writing, replyTo);
 
-                Become(() => Loaded(replayedEventNumbers.ToImmutableList()));
+                Become(() => Loaded(replayedEventNumbers.ToImmutableList(), cmd.HighestSequenceNr));
                 
                 ScheduleStop();
             });
@@ -120,7 +132,7 @@ internal class PersistenceEventWriter : ReceiveActor
             });
         }
 
-        private void Loaded(IImmutableList<long> replayedEventNumbers)
+        private void Loaded(IImmutableList<string> migratedEvents, long currentSequenceNumber)
         {
             ReceiveAsync<Commands.WriteEvents>(async cmd =>
             {
@@ -128,7 +140,23 @@ internal class PersistenceEventWriter : ReceiveActor
                 {
                     var eventsToWrite = cmd
                         .Events
-                        .Where(x => !replayedEventNumbers.Contains(x.SequenceNr))
+                        .Select((x, index) =>
+                        {
+                            var adapter = _eventAdapters.Get(x.Event.GetType());
+                            
+                            var evnt = new Persistent(
+                                adapter.ToJournal(x.Event),
+                                currentSequenceNumber + index + 1,
+                                _persistenceId,
+                                timestamp: x.Timestamp);
+                            
+                            return new
+                            {
+                                Event = (IPersistentRepresentation)evnt,
+                                DedupKey = _deduplicateEvents.GetDeduplicationKey(evnt)
+                            };
+                        })
+                        .Where(x => !migratedEvents.Contains(x.DedupKey))
                         .ToImmutableList();
 
                     if (eventsToWrite.IsEmpty)
@@ -138,22 +166,14 @@ internal class PersistenceEventWriter : ReceiveActor
                         return;
                     }
 
+                    var atomicWrite = new AtomicWrite(eventsToWrite
+                        .Select(x => x.Event)
+                        .ToImmutableList());
+                    
                     var writeResponse = await _journalRef.Ask<IJournalResponse>(
                         new WriteMessages(new List<IPersistentEnvelope>
                             {
-                                new AtomicWrite(eventsToWrite
-                                    .OrderBy(x => x.SequenceNr)
-                                    .Select(x =>
-                                    {
-                                        var adapter = _eventAdapters.Get(x.Event.GetType());
-
-                                        return (IPersistentRepresentation)new Persistent(
-                                            adapter.ToJournal(x.Event),
-                                            x.SequenceNr,
-                                            _persistenceId,
-                                            timestamp: x.Timestamp);
-                                    })
-                                    .ToImmutableList())
+                                atomicWrite
                             },
                             Self,
                             1),
@@ -165,7 +185,9 @@ internal class PersistenceEventWriter : ReceiveActor
                             Sender.Tell(new Responses.WriteEventsResponse());
 
                             Become(() =>
-                                Loaded(replayedEventNumbers.AddRange(eventsToWrite.Select(x => x.SequenceNr))));
+                                Loaded(
+                                    migratedEvents.AddRange(eventsToWrite.Select(x => x.DedupKey)),
+                                    atomicWrite.HighestSequenceNr));
                             break;
                         case WriteMessagesFailed failure:
                             Sender.Tell(new Responses.WriteEventsResponse(failure.Cause));

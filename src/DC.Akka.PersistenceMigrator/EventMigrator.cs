@@ -14,6 +14,7 @@ public class EventMigrator
     private readonly Func<Offset, Source<EventEnvelope, NotUsed>> _startSource;
     private readonly string _destinationId;
     private readonly IStoreEventMigrationPosition _storeMigrationPosition;
+    private readonly IDeduplicateEvents _deduplicateEvents;
     private readonly RestartSettings? _restartSettings;
 
     private EventMigrator(
@@ -21,12 +22,14 @@ public class EventMigrator
         Func<Offset, Source<EventEnvelope, NotUsed>> startSource,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         RestartSettings? restartSettings)
     {
         _actorSystem = actorSystem;
         _startSource = startSource;
         _destinationId = destinationId;
         _storeMigrationPosition = storeMigrationPosition;
+        _deduplicateEvents = deduplicateEvents;
         _restartSettings = restartSettings;
     }
 
@@ -39,7 +42,8 @@ public class EventMigrator
         var destination = _actorSystem.ActorOf(
             Props.Create(() => new PersistenceEventWriter(
                 extension.JournalFor(destinationFullPath),
-                extension.AdaptersFor(destinationFullPath))));
+                extension.AdaptersFor(destinationFullPath),
+                _deduplicateEvents)));
 
         var startFrom = await _storeMigrationPosition.LoadLatestOffset(cancellationToken);
 
@@ -115,6 +119,7 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -134,6 +139,7 @@ public class EventMigrator
             },
             destinationId,
             storeMigrationPosition,
+            deduplicateEvents,
             restartSettings)
             .Run(cancellationToken);
     }
@@ -143,6 +149,7 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -154,6 +161,7 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
+            deduplicateEvents,
             filter,
             restartSettings,
             cancellationToken);
@@ -164,6 +172,7 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -175,6 +184,7 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
+            deduplicateEvents,
             filter,
             restartSettings,
             cancellationToken);
@@ -186,6 +196,7 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -197,6 +208,7 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
+            deduplicateEvents,
             filter,
             restartSettings,
             cancellationToken);
@@ -208,6 +220,7 @@ public class EventMigrator
         string sourceId,
         string destinationId,
         IStoreEventMigrationPosition storeMigrationPosition,
+        IDeduplicateEvents deduplicateEvents,
         Func<EventEnvelope, bool>? filter = null,
         RestartSettings? restartSettings = null,
         CancellationToken cancellationToken = default)
@@ -219,6 +232,7 @@ public class EventMigrator
             sourceId,
             destinationId,
             storeMigrationPosition,
+            deduplicateEvents,
             filter,
             restartSettings,
             cancellationToken);

@@ -109,6 +109,7 @@ public class When_migrating_all_current_events_after_writing_three_events_to_sou
                     SourcePluginName,
                     DestinationPluginName,
                     new StoreEventMigrationPositionInMemory(),
+                    new DeduplicateEventsUsingSequenceNumber(),
                     restartSettings: RestartSettings.Create(
                             TimeSpan.Zero,
                             TimeSpan.Zero,
