@@ -141,8 +141,8 @@ internal class PersistenceEventWriter : ReceiveActor
                     var writeResponse = await _journalRef.Ask<IJournalResponse>(
                         new WriteMessages(new List<IPersistentEnvelope>
                             {
-                                new AtomicWrite(cmd
-                                    .Events
+                                new AtomicWrite(eventsToWrite
+                                    .OrderBy(x => x.SequenceNr)
                                     .Select(x =>
                                     {
                                         var adapter = _eventAdapters.Get(x.Event.GetType());
