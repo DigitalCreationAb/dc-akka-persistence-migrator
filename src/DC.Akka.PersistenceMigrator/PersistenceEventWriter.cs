@@ -53,11 +53,12 @@ internal class PersistenceEventWriter : ReceiveActor
                 persistenceId,
                 _journalRef,
                 _eventAdapters,
-                _deduplicateEvents)))
+                _deduplicateEvents)),
+                persistenceId)
             : writer;
     }
 
-    private class EventWriter : ReceiveActor, IWithTimers
+    private class EventWriter : ReceiveActor, IWithTimers, IWithStash
     {
         private static class WriterCommands
         {
@@ -86,6 +87,7 @@ internal class PersistenceEventWriter : ReceiveActor
         }
 
         public ITimerScheduler Timers { get; set; } = null!;
+        public IStash Stash { get; set; } = null!;
 
         private void NotLoaded()
         {
@@ -123,6 +125,8 @@ internal class PersistenceEventWriter : ReceiveActor
 
                 Become(() => Loaded(replayedEventNumbers.ToImmutableList(), cmd.HighestSequenceNr));
                 
+                Stash.UnstashAll();
+                
                 ScheduleStop();
             });
             
@@ -130,11 +134,16 @@ internal class PersistenceEventWriter : ReceiveActor
             {
                 Context.Stop(Self);
             });
+
+            Receive<Commands.WriteEvents>(_ =>
+            {
+                Stash.Stash();
+            });
         }
 
         private void Loaded(IImmutableList<string> migratedEvents, long currentSequenceNumber)
         {
-            ReceiveAsync<Commands.WriteEvents>(async cmd =>
+            Receive<Commands.WriteEvents>(cmd =>
             {
                 try
                 {
@@ -146,13 +155,18 @@ internal class PersistenceEventWriter : ReceiveActor
                             
                             var evnt = new Persistent(
                                 adapter.ToJournal(x.Event),
-                                currentSequenceNumber + index + 1,
+                                x.SequenceNr,
                                 _persistenceId,
                                 timestamp: x.Timestamp);
                             
                             return new
                             {
-                                Event = (IPersistentRepresentation)evnt,
+                                Event = evnt.Update(
+                                    currentSequenceNumber + index + 1,
+                                    evnt.PersistenceId,
+                                    evnt.IsDeleted,
+                                    evnt.Sender,
+                                    evnt.WriterGuid),
                                 DedupKey = _deduplicateEvents.GetDeduplicationKey(evnt)
                             };
                         })
@@ -170,32 +184,21 @@ internal class PersistenceEventWriter : ReceiveActor
                         .Select(x => x.Event)
                         .ToImmutableList());
                     
-                    var writeResponse = await _journalRef.Ask<IJournalResponse>(
+                    _journalRef.Tell(
                         new WriteMessages(new List<IPersistentEnvelope>
                             {
                                 atomicWrite
                             },
                             Self,
                             1),
-                        TimeSpan.FromSeconds(5));
-
-                    switch (writeResponse)
-                    {
-                        case WriteMessagesSuccessful:
-                            Sender.Tell(new Responses.WriteEventsResponse());
-
-                            Become(() =>
-                                Loaded(
-                                    migratedEvents.AddRange(eventsToWrite.Select(x => x.DedupKey)),
-                                    atomicWrite.HighestSequenceNr));
-                            break;
-                        case WriteMessagesFailed failure:
-                            Sender.Tell(new Responses.WriteEventsResponse(failure.Cause));
-                            break;
-                        default:
-                            Sender.Tell(new Responses.WriteEventsResponse(new Exception("Unknown response")));
-                            break;
-                    }
+                        Self);
+                    
+                    Become(() => Writing(
+                        migratedEvents,
+                        currentSequenceNumber,
+                        eventsToWrite.Select(x => x.DedupKey).ToImmutableList(),
+                        atomicWrite.HighestSequenceNr,
+                        Sender));
                 }
                 catch (Exception e)
                 {
@@ -210,6 +213,49 @@ internal class PersistenceEventWriter : ReceiveActor
             Receive<WriterCommands.Stop>(_ =>
             {
                 Context.Stop(Self);
+            });
+        }
+
+        private void Writing(
+            IImmutableList<string> migratedEvents,
+            long currentSequenceNumber,
+            IImmutableList<string> waitingForEvents,
+            long newSequenceNumber,
+            IActorRef replyTo)
+        {
+            Receive<IJournalResponse>(writeResponse =>
+            {
+                switch (writeResponse)
+                {
+                    case WriteMessagesSuccessful:
+                        replyTo.Tell(new Responses.WriteEventsResponse());
+
+                        Become(() =>
+                            Loaded(
+                                migratedEvents.AddRange(waitingForEvents),
+                                newSequenceNumber));
+                        break;
+                    case WriteMessagesFailed failure:
+                        replyTo.Tell(new Responses.WriteEventsResponse(failure.Cause));
+                        
+                        Become(() => Loaded(migratedEvents, currentSequenceNumber));
+                        break;
+                    default:
+                        replyTo.Tell(new Responses.WriteEventsResponse(new Exception("Unknown response")));
+                        
+                        Become(() => Loaded(migratedEvents, currentSequenceNumber));
+                        break;
+                }
+            });
+            
+            Receive<WriterCommands.Stop>(_ =>
+            {
+                Context.Stop(Self);
+            });
+            
+            Receive<Commands.WriteEvents>(_ =>
+            {
+                Stash.Stash();
             });
         }
 
