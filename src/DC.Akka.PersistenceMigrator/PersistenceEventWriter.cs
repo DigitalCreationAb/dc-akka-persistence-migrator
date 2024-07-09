@@ -150,7 +150,7 @@ internal class PersistenceEventWriter : ReceiveActor
                     var eventsToWrite = cmd
                         .Events
                         .OrderBy(x => x.SequenceNr)
-                        .Select((x, index) =>
+                        .Select(x =>
                         {
                             var adapter = _eventAdapters.Get(x.Event.GetType());
                             
@@ -162,16 +162,21 @@ internal class PersistenceEventWriter : ReceiveActor
                             
                             return new
                             {
-                                Event = evnt.Update(
-                                    currentSequenceNumber + index + 1,
-                                    evnt.PersistenceId,
-                                    evnt.IsDeleted,
-                                    evnt.Sender,
-                                    evnt.WriterGuid),
+                                Event = evnt,
                                 DedupKey = _deduplicateEvents.GetDeduplicationKey(evnt)
                             };
                         })
                         .Where(x => !migratedEvents.Contains(x.DedupKey))
+                        .Select((x, index) => new
+                        {
+                            x.DedupKey,
+                            Event = x.Event.Update(
+                                currentSequenceNumber + index + 1,
+                                x.Event.PersistenceId,
+                                x.Event.IsDeleted,
+                                x.Event.Sender,
+                                x.Event.WriterGuid)
+                        })
                         .ToImmutableList();
 
                     if (eventsToWrite.IsEmpty)
