@@ -247,6 +247,8 @@ internal class PersistenceEventWriter : ReceiveActor
                         Become(() => Loaded(migratedEvents, currentSequenceNumber));
                         break;
                 }
+                
+                Stash.UnstashAll();
             });
             
             Receive<WriterCommands.Stop>(_ =>
