@@ -149,6 +149,7 @@ internal class PersistenceEventWriter : ReceiveActor
                 {
                     var eventsToWrite = cmd
                         .Events
+                        .OrderBy(x => x.SequenceNr)
                         .Select((x, index) =>
                         {
                             var adapter = _eventAdapters.Get(x.Event.GetType());
